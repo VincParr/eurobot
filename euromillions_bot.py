@@ -43,7 +43,8 @@ def get_latest_draw():
     resp = requests.get(BASE_URL + LATEST_ENDPOINT)
     resp.raise_for_status()
     data = resp.json()
-    draw = data[0]
+    # prende l'estrazione più recente
+    draw = max(data, key=lambda x: x['date'])
     return draw['date'], draw['numbers'], draw.get('stars', [])
 
 # === HANDLER TELEGRAM ===
