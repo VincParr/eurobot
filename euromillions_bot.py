@@ -2,14 +2,13 @@
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import nest_asyncio
 import asyncio
 
-# Applichiamo nest_asyncio per far funzionare APScheduler su Render
+# Applichiamo nest_asyncio per Render
 nest_asyncio.apply()
 
 # === CONFIG ===
@@ -74,19 +73,31 @@ async def check_results_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"I tuoi numeri: {user_nums}\nHai indovinato: {matched}"
     )
 
-# === SCHEDULER AUTOMATICO ===
-async def scheduled_check(context: ContextTypes.DEFAULT_TYPE):
-    date, numbers, stars = get_latest_draw()
-    last_date = load_last_draw_date()
-    if date != last_date:
-        save_last_draw_date(date)
-        all_nums = numbers + stars
-        header = f"🆕 Nuova estrazione Euromillions del {date}:\nNumeri: {numbers}, Stelle: {stars}\n"
-        users = json.load(open(USER_NUMBERS_FILE)) if os.path.exists(USER_NUMBERS_FILE) else {}
-        for uid, nums in users.items():
-            matched = [n for n in nums if n in all_nums]
-            text = header + f"I tuoi numeri: {nums}\nHai indovinato: {matched}"
-            await context.bot.send_message(chat_id=int(uid), text=text)
+# === SCHEDULER INTERNO ===
+async def scheduled_check(app):
+    while True:
+        try:
+            date, numbers, stars = get_latest_draw()
+            last_date = load_last_draw_date()
+            if date != last_date:
+                save_last_draw_date(date)
+                all_nums = numbers + stars
+                header = f"🆕 Nuova estrazione Euromillions del {date}:\nNumeri: {numbers}, Stelle: {stars}\n"
+                users = json.load(open(USER_NUMBERS_FILE)) if os.path.exists(USER_NUMBERS_FILE) else {}
+                for uid, nums in users.items():
+                    matched = [n for n in nums if n in all_nums]
+                    text = header + f"I tuoi numeri: {nums}\nHai indovinato: {matched}"
+                    await app.bot.send_message(chat_id=int(uid), text=text)
+        except Exception as e:
+            print("Errore scheduler:", e)
+        # calcola secondi fino al prossimo martedì o venerdì 22:00 UTC
+        now = datetime.utcnow()
+        next_run = now.replace(second=0, microsecond=0)
+        while next_run.weekday() not in [1, 4] or next_run.hour >= 22:
+            next_run += timedelta(days=1)
+        next_run = next_run.replace(hour=22, minute=0)
+        sleep_seconds = (next_run - now).total_seconds()
+        await asyncio.sleep(sleep_seconds)
 
 # === MAIN ===
 def main():
@@ -96,9 +107,8 @@ def main():
     app.add_handler(CommandHandler("setnumeri", set_numbers))
     app.add_handler(CommandHandler("controlla", check_results_cmd))
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(scheduled_check, "cron", day_of_week="tue,fri", hour=22, minute=0, args=[app])
-    scheduler.start()
+    # aggiunge il task scheduler al loop
+    asyncio.get_event_loop().create_task(scheduled_check(app))
 
     print("Bot avviato e pronto!")
     app.run_polling()
