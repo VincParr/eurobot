@@ -130,12 +130,12 @@ async def scheduled_check(app):
         except Exception as e:
             print("Errore scheduler:", e)
 
-        # Calcola secondi fino al prossimo martedì o venerdì 21:00 ora italiana
+        # Calcola secondi fino alle 23:45 ora italiana tutti i giorni
         now = datetime.now(ITALY_TZ)
         next_run = now.replace(second=0, microsecond=0)
-        while next_run.weekday() not in [1, 4] or next_run.hour >= 21:
+        if now.hour > 23 or (now.hour == 23 and now.minute >= 47):
             next_run += timedelta(days=1)
-        next_run = next_run.replace(hour=21, minute=0)
+        next_run = next_run.replace(hour=23, minute=47)
         sleep_seconds = (next_run - now).total_seconds()
         await asyncio.sleep(sleep_seconds)
 
