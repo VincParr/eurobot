@@ -42,7 +42,6 @@ def get_latest_draw():
     resp = requests.get(BASE_URL + "/v1/draws")
     resp.raise_for_status()
     data = resp.json()
-    # Prende l'ultima estrazione disponibile
     if isinstance(data, list):
         draw = data[-1]
     else:
@@ -51,7 +50,13 @@ def get_latest_draw():
 
 # === HANDLER TELEGRAM ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ciao! Usa /setnumeri per impostare i tuoi 7 numeri Euromillions.")
+    message = (
+        "🎲 *Euromillions Bot* 🎲\n\n"
+        "Benvenuto! Usa i comandi qui sotto per interagire con me:\n"
+        "\n✨ /setnumeri - Imposta i tuoi 7 numeri\n"
+        "🔍 /controlla - Controlla l'ultima estrazione"
+    )
+    await update.message.reply_markdown(message)
 
 async def set_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -59,22 +64,39 @@ async def set_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(nums) != 7:
             raise ValueError
         save_numbers(update.effective_user.id, nums)
-        await update.message.reply_text(f"Numeri salvati: {nums}")
+        main_nums = nums[:5]
+        stars = nums[5:]
+        message = (
+            f"✅ I tuoi numeri sono stati salvati:\n"
+            f"🎯 Numeri principali: {' - '.join(map(str, main_nums))}\n"
+            f"⭐ Numeri Stella: {' - '.join(map(str, stars))}"
+        )
+        await update.message.reply_text(message)
     except:
-        await update.message.reply_text("Errore di formato. Usa: /setnumeri n1 n2 ... n7")
+        await update.message.reply_text("⚠️ Errore! Usa il formato: /setnumeri n1 n2 n3 n4 n5 s1 s2")
 
 async def check_results_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_nums = load_numbers(update.effective_user.id)
     if not user_nums:
-        await update.message.reply_text("Non hai ancora impostato i tuoi numeri. Usa /setnumeri.")
+        await update.message.reply_text("⚠️ Non hai ancora impostato i tuoi numeri. Usa /setnumeri.")
         return
     date, numbers, stars = get_latest_draw()
+    main_nums = user_nums[:5]
+    star_nums = user_nums[5:]
     all_nums = numbers + stars
-    matched = [n for n in user_nums if n in all_nums]
-    await update.message.reply_text(
-        f"Estrazione del {date}: Numeri {numbers}, Stelle {stars}\n"
-        f"I tuoi numeri: {user_nums}\nHai indovinato: {matched}"
+    matched_main = [n for n in main_nums if n in all_nums]
+    matched_stars = [n for n in star_nums if n in all_nums]
+
+    message = (
+        f"📅 *Estrazione del {date}*\n"
+        f"🎲 Numeri estratti: {' - '.join(map(str, numbers))}\n"
+        f"⭐ Stelle estratte: {' - '.join(map(str, stars))}\n\n"
+        f"🎯 I tuoi numeri: {' - '.join(map(str, main_nums))}\n"
+        f"⭐ I tuoi numeri Stella: {' - '.join(map(str, star_nums))}\n"
+        f"🏆 Numeri indovinati: {' - '.join(map(str, matched_main)) if matched_main else 'Nessuno'}\n"
+        f"🏅 Stelle indovinate: {' - '.join(map(str, matched_stars)) if matched_stars else 'Nessuna'}"
     )
+    await update.message.reply_markdown(message)
 
 # === SCHEDULER INTERNO ===
 async def scheduled_check(app):
@@ -84,21 +106,32 @@ async def scheduled_check(app):
             last_date = load_last_draw_date()
             if date != last_date:
                 save_last_draw_date(date)
-                all_nums = numbers + stars
-                header = f"🆕 Nuova estrazione Euromillions del {date}:\nNumeri: {numbers}, Stelle: {stars}\n"
                 users = json.load(open(USER_NUMBERS_FILE)) if os.path.exists(USER_NUMBERS_FILE) else {}
-                for uid, nums in users.items():
-                    matched = [n for n in nums if n in all_nums]
-                    text = header + f"I tuoi numeri: {nums}\nHai indovinato: {matched}"
-                    await app.bot.send_message(chat_id=int(uid), text=text)
+                for uid, user_nums in users.items():
+                    main_nums = user_nums[:5]
+                    star_nums = user_nums[5:]
+                    all_nums = numbers + stars
+                    matched_main = [n for n in main_nums if n in all_nums]
+                    matched_stars = [n for n in star_nums if n in all_nums]
+
+                    header = f"🆕 *Nuova estrazione Euromillions del {date}*\n"
+                    message = (
+                        f"{header}"
+                        f"🎲 Numeri estratti: {' - '.join(map(str, numbers))}\n"
+                        f"⭐ Stelle estratte: {' - '.join(map(str, stars))}\n\n"
+                        f"🎯 I tuoi numeri: {' - '.join(map(str, main_nums))}\n"
+                        f"⭐ I tuoi numeri Stella: {' - '.join(map(str, star_nums))}\n"
+                        f"🏆 Numeri indovinati: {' - '.join(map(str, matched_main)) if matched_main else 'Nessuno'}\n"
+                        f"🏅 Stelle indovinate: {' - '.join(map(str, matched_stars)) if matched_stars else 'Nessuna'}"
+                    )
+                    await app.bot.send_message(chat_id=int(uid), text=message, parse_mode='Markdown')
         except Exception as e:
             print("Errore scheduler:", e)
-        # Calcola secondi fino al prossimo martedì o venerdì 22:00 UTC
         now = datetime.now(timezone.utc)
         next_run = now.replace(second=0, microsecond=0)
-        while next_run.weekday() not in [2, 4] or next_run.hour >= 23 and next_run.minute>=13:
+        while next_run.weekday() not in [1, 4] or next_run.hour >= 22:
             next_run += timedelta(days=1)
-        next_run = next_run.replace(hour=23, minute=13)
+        next_run = next_run.replace(hour=22, minute=0)
         sleep_seconds = (next_run - now).total_seconds()
         await asyncio.sleep(sleep_seconds)
 
@@ -117,7 +150,7 @@ async def main():
     # Task scheduler
     asyncio.get_event_loop().create_task(scheduled_check(app))
 
-    print("Bot avviato e pronto!")
+    print("🤖 Bot avviato e pronto!")
     await app.run_polling()
 
 if __name__ == "__main__":
