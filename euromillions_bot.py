@@ -2,7 +2,7 @@
 import os
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import nest_asyncio
@@ -16,7 +16,6 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 USER_NUMBERS_FILE = "user_numbers.json"
 LAST_DRAW_FILE = "last_draw.json"
 BASE_URL = "https://euromillions.api.pedromealha.dev"
-LATEST_ENDPOINT = "/v1/draws?limit=1"
 
 # === FUNZIONI DI SUPPORTO ===
 def save_numbers(user_id, numbers):
@@ -43,7 +42,11 @@ def get_latest_draw():
     resp = requests.get(BASE_URL + "/v1/draws")
     resp.raise_for_status()
     data = resp.json()
-    draw = data[-1]  # l'ultima estrazione
+    # Prende l'ultima estrazione disponibile
+    if isinstance(data, list):
+        draw = data[-1]
+    else:
+        draw = data
     return draw['date'], draw['numbers'], draw.get('stars', [])
 
 # === HANDLER TELEGRAM ===
@@ -90,8 +93,8 @@ async def scheduled_check(app):
                     await app.bot.send_message(chat_id=int(uid), text=text)
         except Exception as e:
             print("Errore scheduler:", e)
-        # calcola secondi fino al prossimo martedì o venerdì 22:00 UTC
-        now = datetime.utcnow()
+        # Calcola secondi fino al prossimo martedì o venerdì 22:00 UTC
+        now = datetime.now(timezone.utc)
         next_run = now.replace(second=0, microsecond=0)
         while next_run.weekday() not in [1, 4] or next_run.hour >= 22:
             next_run += timedelta(days=1)
@@ -100,18 +103,22 @@ async def scheduled_check(app):
         await asyncio.sleep(sleep_seconds)
 
 # === MAIN ===
-def main():
+async def main():
     app = Application.builder().token(TOKEN).build()
 
+    # Ignora eventuali aggiornamenti pendenti per evitare conflitti
+    await app.bot.get_updates(offset=-1)
+
+    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setnumeri", set_numbers))
     app.add_handler(CommandHandler("controlla", check_results_cmd))
 
-    # aggiunge il task scheduler al loop
+    # Task scheduler
     asyncio.get_event_loop().create_task(scheduled_check(app))
 
     print("Bot avviato e pronto!")
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
