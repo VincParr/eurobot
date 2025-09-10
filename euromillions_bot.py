@@ -96,9 +96,9 @@ async def scheduled_check(app):
         # Calcola secondi fino al prossimo martedì o venerdì 22:00 UTC
         now = datetime.now(timezone.utc)
         next_run = now.replace(second=0, microsecond=0)
-        while next_run.weekday() not in [1, 4] or next_run.hour >= 22:
+        while next_run.weekday() not in [2, 4] or next_run.hour >= 23 and next_run.minute>=13:
             next_run += timedelta(days=1)
-        next_run = next_run.replace(hour=22, minute=0)
+        next_run = next_run.replace(hour=23, minute=13)
         sleep_seconds = (next_run - now).total_seconds()
         await asyncio.sleep(sleep_seconds)
 
