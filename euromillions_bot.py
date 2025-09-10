@@ -2,11 +2,12 @@
 import os
 import json
 import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import nest_asyncio
 import asyncio
+from pytz import timezone
 
 # Applichiamo nest_asyncio per Render
 nest_asyncio.apply()
@@ -16,6 +17,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 USER_NUMBERS_FILE = "user_numbers.json"
 LAST_DRAW_FILE = "last_draw.json"
 BASE_URL = "https://euromillions.api.pedromealha.dev"
+ITALY_TZ = timezone('Europe/Rome')
 
 # === FUNZIONI DI SUPPORTO ===
 def save_numbers(user_id, numbers):
@@ -127,11 +129,13 @@ async def scheduled_check(app):
                     await app.bot.send_message(chat_id=int(uid), text=message, parse_mode='Markdown')
         except Exception as e:
             print("Errore scheduler:", e)
-        now = datetime.now(timezone.utc)
+
+        # Calcola secondi fino al prossimo martedì o venerdì 21:00 ora italiana
+        now = datetime.now(ITALY_TZ)
         next_run = now.replace(second=0, microsecond=0)
-        while next_run.weekday() not in [1, 4] or next_run.hour >= 22:
+        while next_run.weekday() not in [1, 4] or next_run.hour >= 21:
             next_run += timedelta(days=1)
-        next_run = next_run.replace(hour=22, minute=0)
+        next_run = next_run.replace(hour=21, minute=0)
         sleep_seconds = (next_run - now).total_seconds()
         await asyncio.sleep(sleep_seconds)
 
