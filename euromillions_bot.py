@@ -1,3 +1,4 @@
+# euromillions_bot.py
 import os
 import json
 import requests
@@ -5,12 +6,18 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import nest_asyncio
+import asyncio
+
+# Applichiamo nest_asyncio per far funzionare APScheduler su Render
+nest_asyncio.apply()
 
 # === CONFIG ===
-TOKEN = os.getenv("TELEGRAM_TOKEN", "INSERISCI_IL_TUO_BOT_TOKEN")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 USER_NUMBERS_FILE = "user_numbers.json"
 LAST_DRAW_FILE = "last_draw.json"
-BASE_URL = "https://euromillions.api.pedromealha.dev/v1/draws?limit=1"
+BASE_URL = "https://euromillions.api.pedromealha.dev"
+LATEST_ENDPOINT = "/v1/draws?limit=1"
 
 # === FUNZIONI DI SUPPORTO ===
 def save_numbers(user_id, numbers):
@@ -34,11 +41,11 @@ def save_last_draw_date(date_str):
     json.dump({"date": date_str}, open(LAST_DRAW_FILE, "w"))
 
 def get_latest_draw():
-    resp = requests.get(BASE_URL)
+    resp = requests.get(BASE_URL + LATEST_ENDPOINT)
     resp.raise_for_status()
     data = resp.json()
     draw = data[0]
-    return draw["date"], draw["numbers"], draw.get("stars", [])
+    return draw['date'], draw['numbers'], draw.get('stars', [])
 
 # === HANDLER TELEGRAM ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,27 +53,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        numbers = list(map(int, context.args))
-        if len(numbers) != 7:
+        nums = list(map(int, context.args))
+        if len(nums) != 7:
             raise ValueError
-        save_numbers(update.effective_user.id, numbers)
-        await update.message.reply_text(f"Numeri salvati: {numbers}")
+        save_numbers(update.effective_user.id, nums)
+        await update.message.reply_text(f"Numeri salvati: {nums}")
     except:
-        await update.message.reply_text("Errore di formato. Usa: /setnumeri n1 n2 n3 n4 n5 n6 n7")
+        await update.message.reply_text("Errore di formato. Usa: /setnumeri n1 n2 ... n7")
 
-async def check_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_numbers = load_numbers(update.effective_user.id)
-    if not user_numbers:
-        await update.message.reply_text("Non hai ancora salvato i tuoi numeri. Usa /setnumeri.")
+async def check_results_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_nums = load_numbers(update.effective_user.id)
+    if not user_nums:
+        await update.message.reply_text("Non hai ancora impostato i tuoi numeri. Usa /setnumeri.")
         return
     date, numbers, stars = get_latest_draw()
     all_nums = numbers + stars
-    matched = [n for n in user_numbers if n in all_nums]
+    matched = [n for n in user_nums if n in all_nums]
     await update.message.reply_text(
         f"Estrazione del {date}: Numeri {numbers}, Stelle {stars}\n"
-        f"I tuoi numeri: {user_numbers}\nHai indovinato: {matched}"
+        f"I tuoi numeri: {user_nums}\nHai indovinato: {matched}"
     )
 
+# === SCHEDULER AUTOMATICO ===
 async def scheduled_check(context: ContextTypes.DEFAULT_TYPE):
     date, numbers, stars = get_latest_draw()
     last_date = load_last_draw_date()
@@ -83,9 +91,10 @@ async def scheduled_check(context: ContextTypes.DEFAULT_TYPE):
 # === MAIN ===
 def main():
     app = Application.builder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setnumeri", set_numbers))
-    app.add_handler(CommandHandler("controlla", check_results))
+    app.add_handler(CommandHandler("controlla", check_results_cmd))
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(scheduled_check, "cron", day_of_week="tue,fri", hour=22, minute=0, args=[app])
