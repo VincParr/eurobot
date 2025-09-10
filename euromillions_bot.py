@@ -40,11 +40,10 @@ def save_last_draw_date(date_str):
     json.dump({"date": date_str}, open(LAST_DRAW_FILE, "w"))
 
 def get_latest_draw():
-    resp = requests.get(BASE_URL + LATEST_ENDPOINT)
+    resp = requests.get(BASE_URL + "/v1/draws")
     resp.raise_for_status()
     data = resp.json()
-    # prende l'estrazione più recente
-    draw = max(data, key=lambda x: x['date'])
+    draw = data[-1]  # l'ultima estrazione
     return draw['date'], draw['numbers'], draw.get('stars', [])
 
 # === HANDLER TELEGRAM ===
