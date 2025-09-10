@@ -2,3 +2,4 @@ python-telegram-bot
 requests
 apscheduler
 nest_asyncio
+pytz
