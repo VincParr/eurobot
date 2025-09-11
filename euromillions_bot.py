@@ -53,10 +53,11 @@ async def check_draws(user_id, context):
         url = "https://euromillions.api.pedromealha.dev/v1/draws"
         response = requests.get(url, timeout=10)
         data = response.json()
-        draw = data["draws"][-1]  # ultimo sorteggio
+        draw = data[-1]  # ultimo sorteggio
 
         winning_nums = draw["numbers"]
         winning_stars = draw["stars"]
+	draw_date = draw["date"]
 
         user_nums = USER_NUMBERS.get(user_id)
         if not user_nums:
@@ -67,7 +68,7 @@ async def check_draws(user_id, context):
         hits_stars = set(user_nums[-2:]) & set(winning_stars)
 
         msg = (
-            f"🎲 Estrazione Euromillions del {draw['date']}\n\n"
+            f"🎲 Estrazione Euromillions del {draw_date}\n\n"
             f"🟢 Numeri vincenti: {winning_nums} + ⭐ {winning_stars}\n"
             f"🎯 I tuoi: {format_numbers(user_nums)}\n\n"
             f"✅ Hai indovinato: {len(hits_nums)} numeri ({hits_nums}) "
