@@ -57,7 +57,7 @@ async def check_draws(user_id, context):
 
         winning_nums = draw["numbers"]
         winning_stars = draw["stars"]
-	draw_date = draw["date"]
+        draw_date = draw["date"]
 
         user_nums = USER_NUMBERS.get(user_id)
         if not user_nums:
