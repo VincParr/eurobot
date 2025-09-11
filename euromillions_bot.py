@@ -139,10 +139,10 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("gioca", gioca))
     app.add_handler(CommandHandler("controlla", controlla))
 
-    # Scheduler: automatico alle 21:00 italiane (puoi cambiare per test)
-    scheduler = AsyncIOScheduler(timezone=ITALY_TZ)
+    # Scheduler: automatico alle 21:00 italiane (cambia per test)
+    scheduler = AsyncIOScheduler(event_loop=loop, timezone=ITALY_TZ)
     scheduler.add_job(schedule_task_in_loop,
-                      CronTrigger(hour=16, minute=34))  # Cambia qui per test temporaneo
+                      CronTrigger(hour=16, minute=36))  # Cambia qui per test temporaneo
     scheduler.start()
 
     print(f"✅ Bot avviato. Prossimo controllo alle {scheduler.get_jobs()[0].next_run_time}")
