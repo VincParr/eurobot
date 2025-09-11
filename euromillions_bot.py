@@ -63,7 +63,7 @@ async def gioca(update, context):
         await update.message.reply_text("⚠️ Inserisci solo numeri!")
         return
     USER_NUMBERS[update.effective_user.id] = nums
-    await update.message.reply_text(f"✅ I tuoi numeri sono stati salvati: 🎯 {format_numbers(nums)}")
+    await update.message.reply_text(f"✅ I tuoi numeri sono stati salvati:\n🎯 {format_numbers(nums)}")
 
 async def controlla(update, context):
     user_id = update.effective_user.id
@@ -88,7 +88,8 @@ async def check_draws(user_id, context):
     hits_stars = set(user_nums[5:]) & set(winning_stars)
 
     msg = (
-        f"🎲 Estrazione Euromillions del {draw_date}\n\n"
+        f"🎲 Estrazione Euromillions del <b>{draw_date}<b>\n\n"
+        await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="HTML")
         f"🟢 Numeri vincenti: {' - '.join(map(str, winning_nums))} | 🌟 {' - '.join(map(str, winning_stars))}\n"
         f"🎯 I tuoi: {format_numbers(user_nums)}\n\n"
         f"✅ Hai indovinato: {format_hits(hits_nums)} numeri e {format_hits(hits_stars)} stelle"
