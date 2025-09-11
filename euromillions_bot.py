@@ -88,14 +88,13 @@ async def check_draws(user_id, context):
     hits_stars = set(user_nums[5:]) & set(winning_stars)
 
     msg = (
-        f"🎲 Estrazione Euromillions del <b>{draw_date}<b>\n\n"
-        await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="HTML")
+        f"🎲 Estrazione Euromillions del <b>{draw_date}</b>\n\n"
         f"🟢 Numeri vincenti: {' - '.join(map(str, winning_nums))} | 🌟 {' - '.join(map(str, winning_stars))}\n"
         f"🎯 I tuoi: {format_numbers(user_nums)}\n\n"
         f"✅ Hai indovinato: {format_hits(hits_nums)} numeri e {format_hits(hits_stars)} stelle"
     )
 
-    await context.bot.send_message(chat_id=user_id, text=msg)
+    await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="HTML")
 
 # === Scheduler automatico ===
 async def scheduled_task(app):
