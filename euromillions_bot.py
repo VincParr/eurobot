@@ -1,173 +1,116 @@
 import os
-import json
 import asyncio
+import nest_asyncio
 import requests
-from datetime import datetime, timedelta
-import pytz
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from datetime import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from telegram.ext import Application, CommandHandler
 from flask import Flask
-import threading
 
-TOKEN = os.getenv("BOT_TOKEN")
-USER_NUMBERS_FILE = "user_numbers.json"
-ITALY_TZ = pytz.timezone("Europe/Rome")
-
-API_URL = "https://euromillions.api.pedromealha.dev/v1/draws"
-
-
-# ----------------------------
-# Funzioni di utilità
-# ----------------------------
-def load_user_numbers():
-    if os.path.exists(USER_NUMBERS_FILE):
-        with open(USER_NUMBERS_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_user_numbers(data):
-    with open(USER_NUMBERS_FILE, "w") as f:
-        json.dump(data, f)
-
-def format_numbers(nums):
-    # primi 5 normali, ultimi 2 stelle
-    balls = " - ".join(str(n) for n in nums[:5])
-    stars = " ⭐ ".join(str(n) for n in nums[5:])
-    return f"{balls} ✨ {stars}"
-
-async def fetch_latest_draw():
-    try:
-        resp = requests.get(API_URL, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            # l’API restituisce una lista, prendiamo l’ultima estrazione
-            last_draw = data[-1]
-            balls = last_draw["numbers"]
-            stars = last_draw["stars"]
-            return balls + stars
-    except Exception as e:
-        print("Errore fetch estrazione:", e)
-    return None
-
-
-# ----------------------------
-# Comandi bot
-# ----------------------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ciao 👋 Inviami i tuoi 7 numeri con /gioca.")
-
-async def gioca(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 7:
-        await update.message.reply_text("Devi inserire esattamente 7 numeri 🎯")
-        return
-
-    try:
-        nums = [int(x) for x in context.args]
-    except ValueError:
-        await update.message.reply_text("❌ Inserisci solo numeri!")
-        return
-
-    users = load_user_numbers()
-    users[str(update.effective_user.id)] = nums
-    save_user_numbers(users)
-
-    await update.message.reply_text(f"I tuoi numeri sono stati salvati: {format_numbers(nums)}")
-
-async def controlla(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    users = load_user_numbers()
-    uid = str(update.effective_user.id)
-    if uid not in users:
-        await update.message.reply_text("Non hai numeri salvati! Usa /gioca prima.")
-        return
-
-    draw = await fetch_latest_draw()
-    if not draw:
-        await update.message.reply_text("⚠️ Non riesco a recuperare l’estrazione.")
-        return
-
-    tuoi = set(users[uid])
-    usciti = set(draw)
-    indovinati = tuoi.intersection(usciti)
-
-    await update.message.reply_text(
-        f"📅 Ultima estrazione: {format_numbers(draw)}\n\n"
-        f"🎯 I tuoi numeri: {format_numbers(users[uid])}\n\n"
-        f"✅ Hai indovinato: {', '.join(map(str, indovinati)) if indovinati else 'Niente 😢'}"
-    )
-
-
-# ----------------------------
-# Scheduler automatico
-# ----------------------------
-async def scheduler(app: Application):
-    while True:
-        try:
-            now = datetime.now(ITALY_TZ)
-            target = now.replace(hour=21, minute=0, second=0, microsecond=0)
-            if now >= target:
-                target += timedelta(days=1)
-            sleep_seconds = (target - now).total_seconds()
-            print(f"[Scheduler] Prossimo controllo alle {target} (tra {sleep_seconds/60:.1f} min)")
-            await asyncio.sleep(sleep_seconds)
-
-            draw = await fetch_latest_draw()
-            if not draw:
-                continue
-
-            users = load_user_numbers()
-            for uid, nums in users.items():
-                tuoi = set(nums)
-                usciti = set(draw)
-                indovinati = tuoi.intersection(usciti)
-
-                await app.bot.send_message(
-                    chat_id=int(uid),
-                    text=(
-                        f"📅 Estrazione di oggi: {format_numbers(draw)}\n\n"
-                        f"🎯 I tuoi numeri: {format_numbers(nums)}\n\n"
-                        f"✅ Hai indovinato: {', '.join(map(str, indovinati)) if indovinati else 'Niente 😢'}"
-                    )
-                )
-        except Exception as e:
-            print("Errore scheduler:", e)
-            await asyncio.sleep(60)
-
-
-# ----------------------------
-# Main
-# ----------------------------
-async def main():
-    app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("gioca", gioca))
-    app.add_handler(CommandHandler("controlla", controlla))
-
-    # avvia scheduler in background
-    asyncio.create_task(scheduler(app))
-
-    print("✅ Bot avviato...")
-    await app.run_polling()
-
-
-# ----------------------------
-# Flask server per Render
-# ----------------------------
+# === Flask app per Render ===
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def home():
-    return "✅ Euromillions Bot attivo su Render!"
+    return "✅ Euromillions Bot è attivo su Render!"
 
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=8000)
+# === Variabili globali ===
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("❌ BOT_TOKEN non trovato. Imposta la variabile d'ambiente su Render.")
 
-# Avvia Flask in un thread separato
-threading.Thread(target=run_flask, daemon=True).start()
+USER_NUMBERS = {}  # user_id -> [num1..5, star1, star2]
 
+# === Funzioni utili ===
+def format_numbers(numbers):
+    """Formatta i numeri utente in modo carino con emoji"""
+    nums = [str(n) for n in numbers[:-2]]
+    stars = [f"🌟 {n}" for n in numbers[-2:]]
+    return " - ".join(nums) + " | " + " - ".join(stars)
 
-# ----------------------------
-# Avvio
-# ----------------------------
+async def start(update, context):
+    await update.message.reply_text("👋 Benvenuto nel bot Euromillions!\nUsa /gioca per salvare i tuoi numeri.")
+
+async def gioca(update, context):
+    try:
+        numbers = list(map(int, context.args))
+        if len(numbers) != 7:
+            await update.message.reply_text("❌ Devi inserire 7 numeri (5 + 2 stelle).")
+            return
+        USER_NUMBERS[update.effective_user.id] = numbers
+        await update.message.reply_text(
+            f"✅ I tuoi numeri sono stati salvati: 🎯 {format_numbers(numbers)}"
+        )
+    except ValueError:
+        await update.message.reply_text("⚠️ Inserisci solo numeri.")
+
+async def controlla(update, context):
+    await check_draws(update.effective_user.id, context)
+
+async def check_draws(user_id, context):
+    try:
+        url = "https://euromillions.api.pedromealha.dev/v1/draws"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        draw = data["draws"][-1]  # ultimo sorteggio
+
+        winning_nums = draw["numbers"]
+        winning_stars = draw["stars"]
+
+        user_nums = USER_NUMBERS.get(user_id)
+        if not user_nums:
+            await context.bot.send_message(chat_id=user_id, text="❌ Non hai ancora registrato numeri con /gioca")
+            return
+
+        hits_nums = set(user_nums[:-2]) & set(winning_nums)
+        hits_stars = set(user_nums[-2:]) & set(winning_stars)
+
+        msg = (
+            f"🎲 Estrazione Euromillions del {draw['date']}\n\n"
+            f"🟢 Numeri vincenti: {winning_nums} + ⭐ {winning_stars}\n"
+            f"🎯 I tuoi: {format_numbers(user_nums)}\n\n"
+            f"✅ Hai indovinato: {len(hits_nums)} numeri ({hits_nums}) "
+            f"e {len(hits_stars)} stelle ({hits_stars})"
+        )
+
+        await context.bot.send_message(chat_id=user_id, text=msg)
+    except Exception as e:
+        await context.bot.send_message(chat_id=user_id, text=f"⚠️ Errore nel recupero estrazione: {e}")
+
+# === Scheduler ===
+async def scheduled_task(app):
+    for user_id in USER_NUMBERS.keys():
+        try:
+            await check_draws(user_id, app.bot)
+        except Exception as e:
+            print(f"Errore invio a {user_id}: {e}")
+
+async def main():
+    app = Application.builder().token(TOKEN).build()
+
+    # comandi
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("gioca", gioca))
+    app.add_handler(CommandHandler("controlla", controlla))
+
+    # scheduler
+    scheduler = AsyncIOScheduler(timezone="Europe/Rome")
+    scheduler.add_job(lambda: asyncio.create_task(scheduled_task(app)),
+                      CronTrigger(hour=21, minute=0))  # tutti i giorni 21:00
+    scheduler.start()
+
+    print("✅ Bot avviato...")
+    await app.run_polling()
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    nest_asyncio.apply()
+
+    # Avvio Flask in un thread separato
+    import threading
+    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=8000)).start()
+
+    # Avvio Telegram bot
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    loop.run_forever()
