@@ -28,10 +28,27 @@ ITALY_TZ = pytz.timezone("Europe/Rome")
 API_URL = "https://euromillions.api.pedromealha.dev/v1/draws"
 
 # === Funzioni utili ===
-def format_numbers(nums):
-    main_nums = " - ".join(str(n) for n in nums[:5])
-    stars = " 🌟 ".join(str(n) for n in nums[5:])
-    return f"{main_nums} | 🌟 {stars}"
+def format_numbers(nums, hits_nums=None, hits_stars=None):
+    hits_nums = hits_nums or set()
+    hits_stars = hits_stars or set()
+
+    main_nums = []
+    for n in nums[:5]:
+        if n in hits_nums:
+            main_nums.append(f"✅{n}✅")
+        else:
+            main_nums.append(str(n))
+    main_str = " - ".join(main_nums)
+
+    star_nums = []
+    for n in nums[5:]:
+        if n in hits_stars:
+            star_nums.append(f"✨{n}✨")
+        else:
+            star_nums.append(f"💛{n}💛")
+    star_str = " - ".join(star_nums)
+
+    return f"{main_str} | {star_str}"
 
 def format_hits(hits):
     if not hits:
@@ -63,7 +80,7 @@ async def gioca(update, context):
         await update.message.reply_text("⚠️ Inserisci solo numeri!")
         return
     USER_NUMBERS[update.effective_user.id] = nums
-    await update.message.reply_text(f"✅ I tuoi numeri sono stati salvati:\n🎯 {format_numbers(nums)}")
+    await update.message.reply_text(f"✅ I tuoi numeri sono stati salvati: 🎯 {format_numbers(nums)}")
 
 async def controlla(update, context):
     user_id = update.effective_user.id
@@ -90,7 +107,7 @@ async def check_draws(user_id, context):
     msg = (
         f"🎲 Estrazione Euromillions del <b>{draw_date}</b>\n\n"
         f"🟢 Numeri vincenti: {' - '.join(map(str, winning_nums))} | 🌟 {' - '.join(map(str, winning_stars))}\n"
-        f"🎯 I tuoi: {format_numbers(user_nums)}\n\n"
+        f"🎯 I tuoi: {format_numbers(user_nums, hits_nums, hits_stars)}\n\n"
         f"✅ Hai indovinato: {format_hits(hits_nums)} numeri e {format_hits(hits_stars)} stelle"
     )
 
@@ -101,22 +118,10 @@ async def scheduled_task(app):
     for user_id in USER_NUMBERS.keys():
         await check_draws(user_id, app.bot)
 
-async def main():
-    app = Application.builder().token(TOKEN).build()
-
-    # Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("gioca", gioca))
-    app.add_handler(CommandHandler("controlla", controlla))
-
-    # Scheduler
-    scheduler = AsyncIOScheduler(timezone=ITALY_TZ)
-    scheduler.add_job(lambda: asyncio.create_task(scheduled_task(app)),
-                      CronTrigger(hour=16, minute=23, timezone=ITALY_TZ))
-    scheduler.start()
-
-    print("✅ Bot avviato...")
-    await app.run_polling()
+# Funzione helper per mettere il job sul loop esistente
+def schedule_task_in_loop():
+    loop = asyncio.get_event_loop()
+    loop.create_task(scheduled_task(app))
 
 # === Avvio ===
 if __name__ == "__main__":
@@ -127,5 +132,20 @@ if __name__ == "__main__":
 
     # Telegram bot
     loop = asyncio.get_event_loop()
-    loop.create_task(main())
+    app = Application.builder().token(TOKEN).build()
+
+    # Handlers
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("gioca", gioca))
+    app.add_handler(CommandHandler("controlla", controlla))
+
+    # Scheduler: automatico alle 21:00 italiane (puoi cambiare per test)
+    scheduler = AsyncIOScheduler(timezone=ITALY_TZ)
+    scheduler.add_job(schedule_task_in_loop,
+                      CronTrigger(hour=21, minute=0))  # Cambia qui per test temporaneo
+    scheduler.start()
+
+    print(f"✅ Bot avviato. Prossimo controllo alle {scheduler.get_jobs()[0].next_run_time}")
+
+    loop.create_task(app.run_polling())
     loop.run_forever()
