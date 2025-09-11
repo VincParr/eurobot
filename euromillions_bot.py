@@ -112,7 +112,7 @@ async def main():
     # Scheduler
     scheduler = AsyncIOScheduler(timezone=ITALY_TZ)
     scheduler.add_job(lambda: asyncio.create_task(scheduled_task(app)),
-                      CronTrigger(hour=21, minute=0))
+                      CronTrigger(hour=16, minute=23, timezone=ITALY_TZ))
     scheduler.start()
 
     print("✅ Bot avviato...")
