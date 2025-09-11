@@ -142,7 +142,7 @@ if __name__ == "__main__":
     # Scheduler: automatico alle 21:00 italiane (puoi cambiare per test)
     scheduler = AsyncIOScheduler(timezone=ITALY_TZ)
     scheduler.add_job(schedule_task_in_loop,
-                      CronTrigger(hour=21, minute=0))  # Cambia qui per test temporaneo
+                      CronTrigger(hour=16, minute=34))  # Cambia qui per test temporaneo
     scheduler.start()
 
     print(f"✅ Bot avviato. Prossimo controllo alle {scheduler.get_jobs()[0].next_run_time}")
